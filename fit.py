@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# Copyright 2014 Victor Amin, http://vamin.net/
+# Copyright 2014-2015 Victor Amin, http://vamin.net/
 """
 This script fits data for bound, free, and dR to a dual langmuir model.
 
-Victor Amin 2014
+Victor Amin 2014-2015
 """
 
 import sys
@@ -91,22 +91,62 @@ delta_R = np.genfromtxt('data/delta_R.csv', delimiter=',')
 # fit data
 p0 = (Ka1_init, Ka2_init, m_init) + Ns_init + dr_init
 np.seterr(all='ignore')  # else, complaints about negative and missing values
-fits, flag = optimize.leastsq(dual_site_global, p0,
-                              args=(bound, free, delta_R), maxfev=100000)
+fits, red_cov, info, err, flag = optimize.leastsq(dual_site_global,
+                                                  p0,
+                                                  args=(bound, free, delta_R),
+                                                  maxfev=100000,
+                                                  full_output=1)
 if flag > 0 and flag < 5:
     sys.stderr.write('\nFit succeeded.\n\n')
 else:
     sys.stderr.write('\nFit FAILED.\n\n')
+    sys.exit()
+
+# calculate error:
+s_sq = (dual_site_global(fits,
+                         bound,
+                         free,
+                         delta_R)**2).sum()/(np.size(delta_R)-len(p0))
+cov = red_cov * s_sq
+error = []
+for i in xrange(len(fits)):
+    try:
+        error.append(np.absolute(cov[i][i])**0.5)
+    except:
+        error.append(0.0)
 
 # output fits
 Ka1_out, Ka2_out, m_out = fits[:3]
+Ka1_err, Ka2_err, m_err = error[:3]
 Ns_out = fits[3:(len(fits)-3)/2+3]
+Ns_err = error[3:(len(fits)-3)/2+3]
 dr_out = fits[(len(fits)-3)/2+3:]
+dr_err = error[(len(fits)-3)/2+3:]
 print "\nFinal Parameters:"
-print "Ka1 = %f" % Ka1_out
-print "Ka2 = %f" % Ka2_out
-print "m = %f" % m_out
+print "Ka1 = %f +/- %f" % (Ka1_out, Ka1_err)
+print "Ka2 = %f +/- %f" % (Ka2_out, Ka2_err)
+print "m = %f +/- %f" % (m_out, m_err)
 print "Ns ="
-print '\n'.join(map(str, Ns_out))
+print '\n'.join(map(lambda x: '%f +/- %f' % x, zip(Ns_out, Ns_err)))
 print "dr ="
-print '\n'.join(map(str, dr_out))
+print '\n'.join(map(lambda x: '%f +/- %f' % x, zip(dr_out, dr_err)))
+
+print
+print 'Reduced chi-sqared: %f' % s_sq
+print
+
+print 'Covariance matrix (csv):'
+for i, row in enumerate(cov):
+    for j in xrange(len(p0)):
+        sys.stdout.write('%f' % cov[i,j])
+        if j < len(p0)-1:
+            print ',',
+print '\n'
+
+print 'Correlation matrix (csv):'
+for i, row in enumerate(cov):
+    for j in xrange(len(p0)):
+        sys.stdout.write('%f' % (cov[i,j]/np.sqrt(cov[i,i]*cov[j,j])))
+        if j < len(p0)-1:
+            print ',',
+    print
